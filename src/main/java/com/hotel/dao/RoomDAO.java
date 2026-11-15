@@ -7,7 +7,7 @@ import java.sql.*;
 import java.util.ArrayList;
 import java.util.List;
 
-public class RoomDAO {
+public class RoomDAO implements GenericDAO<Room> {
 
     public boolean addRoom(Room room) {
         String sql = "INSERT INTO rooms (room_number, room_type, price_per_day, status) VALUES (?, ?, ?, ?)";
@@ -112,4 +112,37 @@ public class RoomDAO {
             rs.getString("status")
         );
     }
+
+    // GenericDAO interface implementation; existing named methods remain available to the UI.
+    @Override public boolean add(Room item) { return addRoom(item); }
+    @Override public boolean update(Room item) { return updateRoom(item); }
+    @Override public boolean delete(int id) { return deleteRoom(id); }
+    @Override public List<Room> getAll() { return getAllRooms(); }
+
+    // -------------------------------------------------------------------------
+    // Extended aggregate methods for Dashboard / Reports
+    // -------------------------------------------------------------------------
+
+    public int countByStatus(String status) {
+        String sql = "SELECT COUNT(*) FROM rooms WHERE UPPER(status) = UPPER(?)";
+        try (Connection con = DBConnection.getConnection();
+             PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setString(1, status);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) return rs.getInt(1);
+            }
+        } catch (SQLException e) { e.printStackTrace(); }
+        return 0;
+    }
+
+    public int getTotalRooms() {
+        String sql = "SELECT COUNT(*) FROM rooms";
+        try (Connection con = DBConnection.getConnection();
+             PreparedStatement ps = con.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+            if (rs.next()) return rs.getInt(1);
+        } catch (SQLException e) { e.printStackTrace(); }
+        return 0;
+    }
+
 }

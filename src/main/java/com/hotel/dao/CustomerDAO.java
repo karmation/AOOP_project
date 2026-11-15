@@ -7,7 +7,7 @@ import java.sql.*;
 import java.util.ArrayList;
 import java.util.List;
 
-public class CustomerDAO {
+public class CustomerDAO implements GenericDAO<Customer> {
 
     public boolean addCustomer(Customer customer) {
         String sql = "INSERT INTO customers (name, phone, email, address, id_proof) VALUES (?, ?, ?, ?, ?)";
@@ -43,11 +43,20 @@ public class CustomerDAO {
     }
 
     public boolean deleteCustomer(int customerId) {
-        String sql = "DELETE FROM customers WHERE customer_id=?";
-        try (Connection con = DBConnection.getConnection();
-             PreparedStatement ps = con.prepareStatement(sql)) {
-            ps.setInt(1, customerId);
-            return ps.executeUpdate() > 0;
+        // Preserve booking and payment history: do not delete customers with bookings.
+        String historySql = "SELECT COUNT(*) FROM bookings WHERE customer_id=?";
+        String deleteSql = "DELETE FROM customers WHERE customer_id=?";
+        try (Connection con = DBConnection.getConnection()) {
+            try (PreparedStatement check = con.prepareStatement(historySql)) {
+                check.setInt(1, customerId);
+                try (ResultSet rs = check.executeQuery()) {
+                    if (rs.next() && rs.getInt(1) > 0) return false;
+                }
+            }
+            try (PreparedStatement ps = con.prepareStatement(deleteSql)) {
+                ps.setInt(1, customerId);
+                return ps.executeUpdate() > 0;
+            }
         } catch (SQLException e) {
             e.printStackTrace();
             return false;
@@ -113,4 +122,25 @@ public class CustomerDAO {
             rs.getString("id_proof")
         );
     }
+
+    // GenericDAO interface implementation; existing named methods remain available to the UI.
+    @Override public boolean add(Customer item) { return addCustomer(item); }
+    @Override public boolean update(Customer item) { return updateCustomer(item); }
+    @Override public boolean delete(int id) { return deleteCustomer(id); }
+    @Override public List<Customer> getAll() { return getAllCustomers(); }
+
+    // -------------------------------------------------------------------------
+    // Extended aggregate methods for Dashboard / Reports
+    // -------------------------------------------------------------------------
+
+    public int getTotalCustomers() {
+        String sql = "SELECT COUNT(*) FROM customers";
+        try (Connection con = DBConnection.getConnection();
+             PreparedStatement ps = con.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+            if (rs.next()) return rs.getInt(1);
+        } catch (SQLException e) { e.printStackTrace(); }
+        return 0;
+    }
+
 }

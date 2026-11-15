@@ -127,3 +127,8 @@ Password: admin123
 
 **Q4. What is a NullPointerException and how do you avoid it?**
 *Answer:* It occurs when you call a method on a reference variable that points to `null`. We avoid it by checking for nulls (e.g., in `ValidationUtil`) before performing operations, and by ensuring our DAOs return empty Lists instead of null when no records are found.
+
+
+## Review 2 & Review 3 preparation
+
+See [REVIEW_2_3_CRASH_GUIDE.md](REVIEW_2_3_CRASH_GUIDE.md) for the added AOOP concepts, build/run steps, demonstration plan, limitations, and viva questions.

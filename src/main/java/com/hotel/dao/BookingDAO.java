@@ -15,46 +15,45 @@ public class BookingDAO {
 
     public boolean createBooking(Booking booking) {
         String insertBookingSql = "INSERT INTO bookings (customer_id, room_id, check_in, check_out, adults, children, status) VALUES (?, ?, ?, ?, ?, ?, ?)";
-        Connection con = null;
-        try {
-            con = DBConnection.getConnection();
-            con.setAutoCommit(false); // Start transaction
-
-            try (PreparedStatement ps = con.prepareStatement(insertBookingSql)) {
-                ps.setInt(1, booking.getCustomerId());
-                ps.setInt(2, booking.getRoomId());
-                ps.setDate(3, booking.getCheckIn());
-                ps.setDate(4, booking.getCheckOut());
-                ps.setInt(5, booking.getAdults());
-                ps.setInt(6, booking.getChildren());
-                ps.setString(7, "ACTIVE");
-                
-                int rows = ps.executeUpdate();
-                if (rows > 0) {
-                    // Update room status
-                    boolean roomUpdated = roomDAO.updateRoomStatus(con, booking.getRoomId(), "OCCUPIED");
-                    if (roomUpdated) {
-                        con.commit(); // Success
-                        return true;
+        String lockRoomSql = "SELECT status FROM rooms WHERE room_id=? FOR UPDATE";
+        try (Connection con = DBConnection.getConnection()) {
+            con.setAutoCommit(false);
+            try {
+                // Lock the room row so two users cannot book it simultaneously.
+                try (PreparedStatement lock = con.prepareStatement(lockRoomSql)) {
+                    lock.setInt(1, booking.getRoomId());
+                    try (ResultSet rs = lock.executeQuery()) {
+                        if (!rs.next() || !"AVAILABLE".equalsIgnoreCase(rs.getString("status"))) {
+                            con.rollback();
+                            return false;
+                        }
                     }
                 }
-                con.rollback(); // Failed
+                try (PreparedStatement ps = con.prepareStatement(insertBookingSql)) {
+                    ps.setInt(1, booking.getCustomerId());
+                    ps.setInt(2, booking.getRoomId());
+                    ps.setDate(3, booking.getCheckIn());
+                    ps.setDate(4, booking.getCheckOut());
+                    ps.setInt(5, booking.getAdults());
+                    ps.setInt(6, booking.getChildren());
+                    ps.setString(7, "ACTIVE");
+                    if (ps.executeUpdate() == 0) { con.rollback(); return false; }
+                }
+                if (!roomDAO.updateRoomStatus(con, booking.getRoomId(), "OCCUPIED")) {
+                    con.rollback(); return false;
+                }
+                con.commit();
+                return true;
+            } catch (SQLException ex) {
+                con.rollback();
+                throw ex;
+            } finally {
+                con.setAutoCommit(true);
             }
         } catch (SQLException e) {
             e.printStackTrace();
-            try {
-                if (con != null) con.rollback();
-            } catch (SQLException ex) {
-                ex.printStackTrace();
-            }
-        } finally {
-            try {
-                if (con != null) con.setAutoCommit(true);
-            } catch (SQLException e) {
-                e.printStackTrace();
-            }
+            return false;
         }
-        return false;
     }
 
     public boolean updateBookingStatus(int bookingId, String status) {
@@ -168,5 +167,34 @@ public class BookingDAO {
             e.printStackTrace();
         }
         return 0;
+    }
+
+    // -------------------------------------------------------------------------
+    // Extended query methods for Dashboard / Reports
+    // -------------------------------------------------------------------------
+
+    public List<Booking> getTodayCheckIns() {
+        return getBookingsByQuery("SELECT * FROM bookings WHERE check_in = CURDATE() AND status = 'ACTIVE' ORDER BY booking_id DESC");
+    }
+
+    public List<Booking> getTodayCheckOuts() {
+        return getBookingsByQuery("SELECT * FROM bookings WHERE check_out = CURDATE() AND status = 'ACTIVE' ORDER BY booking_id DESC");
+    }
+
+    public List<Booking> getRecentBookings() {
+        return getBookingsByQuery("SELECT * FROM bookings ORDER BY booking_id DESC LIMIT 10");
+    }
+
+    public List<Booking> getBookingsByStatus(String status) {
+        List<Booking> bookings = new ArrayList<>();
+        String sql = "SELECT * FROM bookings WHERE status = ? ORDER BY booking_id DESC";
+        try (Connection con = DBConnection.getConnection();
+             PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setString(1, status);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) bookings.add(mapRowToBooking(rs));
+            }
+        } catch (SQLException e) { e.printStackTrace(); }
+        return bookings;
     }
 }
